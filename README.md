@@ -356,77 +356,99 @@ npm run dev
 
 ## Deploy hiện tại
 
-Wrapper hiện nên chạy bằng `PM2` thay vì chạy tay bằng `node server.js` hoặc `nohup`, vì:
+Wrapper hiện chạy bằng **PM2**, không còn dùng `node server.js` tay hay `nohup`.
 
-- restart ổn định hơn
-- không bị dính shell khi deploy
-- có log riêng
-- tự restart nếu process crash
-- dễ quản lý sau reboot
-
-### Cài PM2
+### Cài PM2 (chỉ cần 1 lần)
 
 ```bash
 npm install -g pm2
+pm2 startup          # để PM2 tự chạy sau reboot
 ```
 
-### Start wrapper bằng PM2
+### Deploy — workflow đầy đủ
 
 ```bash
+# 1. Pull code mới
+cd /home/leco/wrapper
+git pull
+
+# 2. Restart wrapper (PM2 giữ env cũ, code mới từ đĩa)
+pm2 restart opencode-wrapper
+
+# 3. Kiểm tra
+pm2 status
+curl -s -H "Authorization: Bearer <password>" http://localhost:36788/api/health
+
+# 4. Xem log nếu có lỗi
+pm2 logs opencode-wrapper --lines 10 --nostream
+```
+
+### Start lần đầu
+
+```bash
+cd /home/leco/wrapper
+npm install
+
 PORT=36788 \
 OPCODE_PASSWORD="your_password" \
 OPENCODE_URL="http://127.0.0.1:4096" \
 BROWSE_ROOT="/home" \
-pm2 start /home/leco/wrapper/server.js --name opencode-wrapper
+pm2 start server.js --name opencode-wrapper
+
+pm2 save   # lưu process list để reboot tự chạy
 ```
 
-### Các lệnh vận hành hằng ngày
+### Cập nhật env (password, port...)
 
 ```bash
-# Xem trạng thái
-pm2 status
+pm2 restart opencode-wrapper --update-env
+```
 
-# Restart wrapper
+> Nếu đổi PORT, nhớ kiểm tra lại `nginx` hoặc URL truy cập.
+
+### Lệnh PM2 hằng ngày
+
+| Lệnh | Ý nghĩa |
+|------|---------|
+| `pm2 status` | Xem trạng thái app |
+| `pm2 restart opencode-wrapper` | Restart deploy |
+| `pm2 logs opencode-wrapper` | Xem log realtime |
+| `pm2 logs opencode-wrapper --lines 20 --nostream` | Xem 20 dòng log gần nhất |
+| `pm2 stop opencode-wrapper` | Dừng |
+| `pm2 start opencode-wrapper` | Start lại sau stop |
+| `pm2 save` | Lưu process list |
+| `pm2 startup` | Tự khởi động sau reboot |
+
+### Verify sau deploy
+
+```bash
+# Health check
+curl -s -H "Authorization: Bearer your_password" "http://127.0.0.1:36788/api/health"
+# → {"healthy":true,"version":"1.15.1"}
+
+# Session state (có SQLite persistence)
+curl -s -H "Authorization: Bearer your_password" "http://127.0.0.1:36788/api/sessions/<id>/state"
+# → {"status":"idle","prompts":[]}
+
+# Danh sách project
+curl -s -H "Authorization: Bearer your_password" "http://127.0.0.1:36788/api/projects"
+```
+
+### Troubleshoot
+
+```bash
+# Xem log lỗi
+pm2 logs opencode-wrapper --err --lines 20 --nostream
+
+# Restart nếu crash
 pm2 restart opencode-wrapper
 
-# Xem log realtime
-pm2 logs opencode-wrapper
+# Xem process có đang giữ port không
+fuser 36788/tcp
 
-# Dừng wrapper
-pm2 stop opencode-wrapper
-
-# Start lại sau khi stop
-pm2 start opencode-wrapper
-```
-
-### Lưu PM2 process list
-
-```bash
-pm2 save
-```
-
-### Tự khởi động sau reboot
-
-```bash
-pm2 startup
-pm2 save
-```
-
-### Kiểm tra sau deploy
-
-```bash
-curl -H "Authorization: Bearer your_password" \
-  "http://127.0.0.1:36788/api/health"
-
-curl -H "Authorization: Bearer your_password" \
-  "http://127.0.0.1:36788/api/sessions/<session_id>/state"
-```
-
-Kỳ vọng:
-
-```json
-{"healthy":true,"version":"1.15.1"}
-{"status":"idle","prompts":[]}
+# Kill tay nếu PM2 không dừng được
+fuser -k 36788/tcp
+pm2 restart opencode-wrapper
 ```
 
 ---
