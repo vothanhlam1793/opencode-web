@@ -163,6 +163,8 @@ body {
   margin-top: 5px; opacity: 0; flex-shrink: 0; transition: opacity .15s;
 }
 .session-item.active .sess-dot { opacity: 1; }
+.session-item.busy .sess-dot { opacity: 1; animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 1; transform: scale(1.35); } }
 
 .sess-meta { flex: 1; min-width: 0; }
 .sess-title {
@@ -259,9 +261,13 @@ body {
 /* ── Messages ── */
 #messages {
   flex: 1; overflow-y: auto; padding: 18px 16px 14px;
-  display: flex; flex-direction: column; gap: 10px;
   -webkit-overflow-scrolling: touch;
 }
+
+.session-messages {
+  display: none; flex-direction: column; gap: 10px;
+}
+.session-messages.active { display: flex; }
 
 .message { max-width: 100%; animation: fadeIn .18s ease; }
 @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
