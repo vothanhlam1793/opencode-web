@@ -91,6 +91,7 @@ const wss = new WebSocketServer({ server });
 
 const client = createOpencodeClient({ baseUrl: OPENCODE_URL });
 const wsClients = new Map();
+const questionRequestMap = new Map(); // callID → requestID
 
 // ── Session runtime helpers (SQLite-backed) ─────────────────
 function getSessionStatus(sessionID) {
@@ -214,7 +215,23 @@ async function forwardEvents() {
               const { sessionID } = p;
               if (sessionID) {
                 setSessionStatus(sessionID, "idle");
-                // Let the event flow through for frontend finishResponse()
+              }
+            }
+
+            // Track question requests → map callID to requestID for answer submission
+            if (event.type === "question.asked") {
+              const { id: requestID, tool } = p;
+              if (requestID && tool?.callID) {
+                questionRequestMap.set(tool.callID, requestID);
+              }
+            }
+            if (event.type === "question.replied" || event.type === "question.rejected") {
+              // Cleanup — find and remove callID mapping by requestID
+              const { requestID } = p;
+              if (requestID) {
+                for (const [callID, rid] of questionRequestMap) {
+                  if (rid === requestID) { questionRequestMap.delete(callID); break; }
+                }
               }
             }
 
@@ -345,6 +362,27 @@ async function handleWsMessage(ws, msg) {
     const { permissionId, sessionID, response, remember } = msg;
     if (permissionId && sessionID) {
       await respondToPermission({ permissionId, sessionID, response, remember });
+    }
+  }
+
+  if (action === "answer_question") {
+    const { callID, sessionID, answers } = msg;
+    if (callID && sessionID && answers?.length) {
+      const requestID = questionRequestMap.get(callID);
+      if (!requestID) {
+        ws.send(JSON.stringify({ type: "error", error: "Question not found or already answered" }));
+        return;
+      }
+      try {
+        await fetch(`${OPENCODE_URL}/question/${requestID}/reply`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answers: [answers] }),
+        });
+        ws.send(JSON.stringify({ type: "question_answered", callID }));
+      } catch (e) {
+        ws.send(JSON.stringify({ type: "error", error: e.message }));
+      }
     }
   }
 }

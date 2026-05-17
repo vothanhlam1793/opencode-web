@@ -357,6 +357,11 @@ function dispatch(msg) {
       break;
     case "session_created": onSessionCreated(msg.session); break;
     case "error":           onServerError(msg); break;
+    case "question_answered": {
+      // Question answer submitted — card stays, awaiting tool completion
+      toast("Answer sent");
+      break;
+    }
     case "aborted":
       isBusy = false; streamStarted = false;
       setBusy(false);
@@ -1089,36 +1094,26 @@ function onQuestionTool(part) {
 function submitQuestionResponse(part, el) {
   const card = el.querySelector(".prompt-card");
   const statusEl = el.querySelector(".prompt-card-status");
-  const qid = part.id || part.callID;
 
+  const questions = part.state?.input?.questions || [];
   const selected = Array.from(el.querySelectorAll(".prompt-card-options input:checked")).map(input => {
     const idx = Number(input.value);
-    const questions = part.state?.input?.questions || [];
     const option = questions[0]?.options?.[idx];
     return option?.label || "";
   }).filter(Boolean);
+
+  if (!selected.length) { toast("Select an option first"); return; }
 
   card.classList.add("submitting");
   statusEl.textContent = "Sending…";
   el.querySelectorAll(".prompt-action").forEach(btn => { btn.disabled = true; });
 
-  apiFetch(`/api/sessions/${encodeURIComponent(part.sessionID)}/prompt`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: selected.join(", ") }),
-  }).then(async r => {
-    if (!r.ok) {
-      const data = await r.json().catch(() => ({}));
-      throw new Error(data.error || "Failed to submit answer");
-    }
-    // On success — card stays, will be updated when question tool completes
-  }).catch(err => {
-    card.classList.remove("submitting");
-    statusEl.textContent = "Awaiting";
-    statusEl.className = "prompt-card-status pending";
-    el.querySelectorAll(".prompt-action").forEach(btn => { btn.disabled = false; });
-    toast(err.message);
-  });
+  ws.send(JSON.stringify({
+    action: "answer_question",
+    callID: part.callID,
+    sessionID: part.sessionID,
+    answers: selected,
+  }));
 }
 
 function createPromptCard(prompt) {
