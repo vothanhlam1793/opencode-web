@@ -1,0 +1,17 @@
+{
+  "name": "opencode-web-wrapper",
+  "version": "1.0.0",
+  "description": "Web wrapper for opencode.ai - chat remotely via browser",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "^1.15.1",
+    "better-sqlite3": "^12.10.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "ws": "^8.18.0"
+  }
+}

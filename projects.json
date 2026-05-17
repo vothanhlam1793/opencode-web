@@ -1,0 +1,14 @@
+[
+  {
+    "path": "/home/leco",
+    "name": "Home"
+  },
+  {
+    "path": "/home/leco/wrapper",
+    "name": "Wrapper"
+  },
+  {
+    "path": "/home/leco/zalohub",
+    "name": "ZaloHub"
+  }
+]

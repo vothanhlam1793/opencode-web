@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f0f14">
+<title>OpenCode</title>
+<link rel="stylesheet" href="style.css?v=11">
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Mobile topbar ── -->
+  <header id="topbar">
+    <button id="btn-menu" class="icon-btn">☰</button>
+    <div id="header-info">
+      <span id="header-title">OpenCode</span>
+      <span id="header-sub"></span>
+    </div>
+    <button id="btn-new-mobile" class="icon-btn" title="New session">✚</button>
+  </header>
+
+  <!-- ── Sidebar overlay ── -->
+  <div id="sidebar-overlay" class="hidden"></div>
+
+  <!-- ── Sidebar: 2 panels ── -->
+  <aside id="sidebar" class="hidden">
+
+    <!-- Panel A: project list (icon rail) -->
+    <div id="proj-rail">
+      <div id="proj-rail-top">
+        <button id="btn-add-proj" class="rail-btn" title="Add project">+</button>
+      </div>
+      <div id="proj-list"></div>
+      <div id="proj-rail-bottom">
+        <div id="status-dot" class="dot-connecting" title="Connecting..."></div>
+      </div>
+    </div>
+
+    <!-- Panel B: session list for selected project -->
+    <div id="sess-panel">
+      <div id="sess-panel-header">
+        <div id="sess-proj-name"></div>
+        <button id="btn-close-sidebar" class="icon-btn">✕</button>
+      </div>
+      <div id="sess-panel-sub">
+        <span id="sess-proj-path"></span>
+      </div>
+      <ul id="session-list"></ul>
+      <div id="sess-panel-footer">
+        <button id="btn-new-session" class="footer-btn accent">+ New session</button>
+        <button id="btn-logout" class="footer-btn footer-btn-danger">Logout</button>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── Main chat ── -->
+  <main id="chat-area">
+
+    <!-- Chat toolbar -->
+    <div id="chat-toolbar">
+      <div id="toolbar-left">
+        <select id="model-select" class="toolbar-select" title="Model"></select>
+      </div>
+      <div id="toolbar-right">
+        <div id="conn-badge" class="badge connecting">Connecting</div>
+      </div>
+    </div>
+
+    <!-- Chat header: project / session title -->
+    <div id="chat-header">
+      <div id="chat-header-info">
+        <span id="chat-header-title">OpenCode</span>
+        <span id="chat-header-sep">·</span>
+        <span id="chat-header-sub">New session</span>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div id="messages"></div>
+
+    <!-- Input area -->
+    <div id="input-area">
+      <div class="input-row">
+        <button id="btn-mode" class="btn-mode" data-mode="build" title="Toggle plan/build mode">Build</button>
+        <button id="btn-abort" class="btn-stop hidden" title="Stop">■</button>
+        <textarea id="msg-input" placeholder="Message OpenCode…" rows="1"></textarea>
+        <button id="btn-send" class="btn-send" disabled title="Send">➤</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Add project modal -->
+<div id="modal-overlay" class="hidden">
+  <div id="modal">
+    <div class="modal-title">Add project</div>
+
+    <label class="modal-label">Browse path</label>
+    <div id="browser">
+      <div id="browser-path"></div>
+      <div id="browser-list"></div>
+      <div id="browser-new">
+        <input id="browser-mkdir" type="text" placeholder="New folder name…" autocomplete="off" spellcheck="false">
+        <button id="browser-mkdir-btn" class="footer-btn accent" style="width:auto;flex-shrink:0">Create</button>
+      </div>
+    </div>
+
+    <label class="modal-label">Selected path</label>
+    <input id="modal-path" type="text" placeholder="/home/leco/project" autocomplete="off" spellcheck="false" readonly>
+
+    <label class="modal-label">Name (optional)</label>
+    <input id="modal-name" type="text" placeholder="My Project" autocomplete="off">
+
+    <div class="modal-actions">
+      <button id="modal-cancel" class="footer-btn">Cancel</button>
+      <button id="modal-ok" class="footer-btn accent">Add</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Login overlay -->
+<div id="login-overlay">
+  <div id="login-box">
+    <h2>OpenCode</h2>
+    <p id="login-copy">Enter server password</p>
+    <input id="login-password" type="password" placeholder="Password…" autocomplete="off">
+    <button id="login-btn">Connect</button>
+    <div id="login-status"></div>
+    <div id="login-err"></div>
+  </div>
+</div>
+
+<script src="app.js?v=11"></script>
+</body>
+</html>
