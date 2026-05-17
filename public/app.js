@@ -15,13 +15,15 @@ const $ = (s) => document.querySelector(s);
 let ws, wsReady = false;
 let currentSessionId = null;
 let currentProjectPath = null;   // path of selected project
-let isBusy = false;              // AI is processing
+let isBusy = false;              // (compat alias for isCurrentBusy)
+let msgQueue = [];               // (compat alias for getCurrentQueue)
+const sessionBusy = new Map();    // sessionID → true/false
+const sessionQueues = new Map();  // sessionID → [{text, model, agent, directory}]
 let currentMsgEl = null;         // assistant bubble being streamed
 let partialText = "";
 let currentToolEls = {};
 let sessions = [];               // sessions loaded via API (filtered by project)
 let unseenSessions = new Set();  // session IDs with unread updates
-let msgQueue = [];               // queued messages while busy
 let streamStarted = false;       // first token received
 let authState = "unauthenticated";
 let reconnectTimer = null;
@@ -33,6 +35,14 @@ let promptCards = new Map();
 let questionCards = new Map();
 
 const AUTO_SCROLL_THRESHOLD = 96;
+
+// ── Per-session busy/queue helpers ─────
+function isSessionBusy(sid)       { return !!sessionBusy.get(sid); }
+function isCurrentBusy()          { return !!sessionBusy.get(currentSessionId); }
+function getSessionQueue(sid)     { let q = sessionQueues.get(sid); if (!q) { q = []; sessionQueues.set(sid, q); } return q; }
+function getCurrentQueue()        { return getSessionQueue(currentSessionId); }
+function setSessionBusy(sid, v)   { if (v) sessionBusy.set(sid, true); else sessionBusy.delete(sid); }
+function setCurrentBusy(v)        { if (currentSessionId) setSessionBusy(currentSessionId, v); }
 
 // Projects fetched from server (stored in projects.json)
 let projects = [];
@@ -85,13 +95,15 @@ function resetAppState() {
   currentSessionId = null;
   currentProjectPath = null;
   isBusy = false;
+  msgQueue = [];
+  sessionBusy.clear();
+  sessionQueues.clear();
   currentMsgEl = null;
   partialText = "";
   currentToolEls = {};
   sessions = [];
   projects = [];
   unseenSessions.clear();
-  msgQueue = [];
   streamStarted = false;
   autoScrollLocked = false;
   promptCards = new Map();
@@ -275,7 +287,7 @@ function selectProject(path, renderSessions = true) {
   if (!renderSessions) return;
 
   // Clear current chat & reload sessions for this project
-  if (!isBusy) {
+  if (!isCurrentBusy()) {
     currentSessionId = null;
     messagesDiv.innerHTML = emptyStateHtml();
     autoScrollLocked = false;
@@ -305,7 +317,7 @@ function connect() {
   ws.onclose = (e) => {
     wsReady = false;
     btnSend.disabled = true;
-    if (isBusy) { isBusy = false; streamStarted = false; setBusy(false); }
+    if (isCurrentBusy()) { setCurrentBusy(false); streamStarted = false; setBusy(false); }
     if (e.code === 4001) {
       handleUnauthorized("Wrong password");
       return;
@@ -363,7 +375,7 @@ function dispatch(msg) {
       break;
     }
     case "aborted":
-      isBusy = false; streamStarted = false;
+      setCurrentBusy(false); streamStarted = false;
       setBusy(false);
       toast("Stopped");
       drainQueue();
@@ -491,24 +503,27 @@ function onEvent(evt) {
     }
 
     case "session.status": {
+      const sid = p.sessionID;
       if (p.status?.type === "busy") {
-        if (p.sessionID !== currentSessionId) {
-          unseenSessions.add(p.sessionID);
+        if (sid !== currentSessionId) {
+          unseenSessions.add(sid);
           renderSessionList();
-        } else if (!isBusy) {
-          isBusy = true; setBusy(true);
+        } else if (!isCurrentBusy()) {
+          setCurrentBusy(true); setBusy(true);
         }
-      } else if (p.status?.type === "idle" && p.sessionID === currentSessionId) {
-        finishResponse();
+      } else if (p.status?.type === "idle" && sid === currentSessionId) {
+        finishResponse(sid);
       }
       break;
     }
 
     case "session.idle": {
-      if (p.sessionID === currentSessionId) {
-        finishResponse();
+      const sid = p.sessionID;
+      if (sid) setSessionBusy(sid, false);
+      if (sid === currentSessionId) {
+        finishResponse(sid);
       } else {
-        unseenSessions.add(p.sessionID);
+        unseenSessions.add(sid);
         renderSessionList();
       }
       break;
@@ -557,23 +572,26 @@ function onEvent(evt) {
   }
 }
 
-function finishResponse() {
+function finishResponse(sessionID) {
   removeSpinner();
   if (currentMsgEl) {
-    // Final render
     getMsgContent(currentMsgEl).innerHTML = renderMarkdown(partialText);
   }
-  currentMsgEl   = null;
-  partialText    = "";
-  currentToolEls = {};
-  isBusy         = false;
+  // Only clear render state if the finished session IS the current one
+  if (!sessionID || sessionID === currentSessionId) {
+    currentMsgEl   = null;
+    partialText    = "";
+    currentToolEls = {};
+  }
+  setSessionBusy(sessionID || currentSessionId, false);
   streamStarted  = false;
   setBusy(false);
   maybeScrollBottom();
-  drainQueue();
+  drainQueue(sessionID);
 }
 
 function onServerError(msg) {
+  const sid = msg.sessionId || currentSessionId;
   removeSpinner();
   if (currentMsgEl) {
     getMsgContent(currentMsgEl).insertAdjacentHTML("beforeend",
@@ -581,16 +599,19 @@ function onServerError(msg) {
     currentMsgEl = null;
   }
   partialText = ""; currentToolEls = {};
-  isBusy = false; streamStarted = false;
+  setSessionBusy(sid, false); streamStarted = false;
   setBusy(false);
   toast("Error: " + (msg.error || "failed").slice(0, 60));
-  drainQueue();
+  drainQueue(sid);
 }
 
 // ── Queue ──────────────────────────────
-function drainQueue() {
-  if (msgQueue.length && wsReady && !isBusy) {
-    const next = msgQueue.shift();
+function drainQueue(sessionID) {
+  const sid = sessionID || currentSessionId;
+  if (!sid) return;
+  const q = getSessionQueue(sid);
+  if (q.length && wsReady && !isSessionBusy(sid)) {
+    const next = q.shift();
     updateQueueNotice();
     doSend(next.text, next.model, next.agent, next.directory, next.sessionId);
   }
@@ -598,8 +619,9 @@ function drainQueue() {
 
 function updateQueueNotice() {
   const el = messagesDiv.querySelector(".msg-queue-notice");
+  const q = getCurrentQueue();
   if (el) {
-    if (msgQueue.length) el.textContent = `${msgQueue.length} message${msgQueue.length>1?"s":""} queued`;
+    if (q.length) el.textContent = `${q.length} message${q.length>1?"s":""} queued`;
     else el.remove();
   }
 }
@@ -702,9 +724,9 @@ function sendMessage() {
 
   addUserBubble(text);
 
-  if (isBusy) {
-    // Queue it
-    msgQueue.push({ text, model, agent, directory, sessionId: currentSessionId });
+  if (isCurrentBusy()) {
+    // Queue it per session
+    getCurrentQueue().push({ text, model, agent, directory, sessionId: currentSessionId });
     // Show queue notice
     let notice = messagesDiv.querySelector(".msg-queue-notice");
     if (!notice) {
@@ -712,7 +734,7 @@ function sendMessage() {
       notice.className = "msg-queue-notice";
       messagesDiv.appendChild(notice);
     }
-    notice.textContent = `${msgQueue.length} message${msgQueue.length>1?"s":""} queued`;
+    notice.textContent = `${getCurrentQueue().length} message${getCurrentQueue().length>1?"s":""} queued`;
     scrollBottom(true);
     return;
   }
@@ -721,20 +743,22 @@ function sendMessage() {
 }
 
 function doSend(text, model, agent, directory, sessionId) {
+  const sid = sessionId || currentSessionId;
   if (!currentSessionId && !sessionId) messagesDiv.innerHTML = "";
   partialText    = "";
   currentToolEls = {};
   currentMsgEl   = null;
   streamStarted  = false;
-  isBusy = true;
+  setSessionBusy(sid, true);
   autoScrollLocked = false;
   setBusy(true);
-  ws.send(JSON.stringify({ action: "send", sessionId: sessionId || currentSessionId, text, model, agent, directory }));
+  ws.send(JSON.stringify({ action: "send", sessionId: sid, text, model, agent, directory }));
 }
 
 function abortSession() {
-  if (currentSessionId && isBusy) {
-    msgQueue = []; // clear queue too
+  if (currentSessionId && isCurrentBusy()) {
+    setSessionBusy(currentSessionId, false);
+    getCurrentQueue().length = 0; // clear per-session
     updateQueueNotice();
     ws.send(JSON.stringify({ action: "abort", sessionId: currentSessionId }));
   }
@@ -837,16 +861,16 @@ function loadMessages(id) {
     }
 
     // Rehydrate busy/idle state từ server
-    if (runtime.status === "busy" && !isBusy) {
-      isBusy = true;
+    if (runtime.status === "busy" && !isSessionBusy(id)) {
+      setSessionBusy(id, true);
       streamStarted = false;
       currentMsgEl = null;
       partialText = "";
       currentToolEls = {};
       setBusy(true);
-    } else if (runtime.status !== "busy" && isBusy) {
-      // session đã idle nhưng client còn đang hiển thị busy → reset
-      isBusy = false;
+    } else if (runtime.status !== "busy" && isSessionBusy(id)) {
+      // session đã idle nhưng vẫn được đánh dấu busy → reset
+      setSessionBusy(id, false);
       streamStarted = false;
       setBusy(false);
     }
@@ -993,7 +1017,7 @@ function newSession() {
   if (authState !== "authenticated") return;
   currentSessionId = null;
   localStorage.removeItem("oc_session");
-  msgQueue = [];
+  sessionQueues.clear();
   autoScrollLocked = false;
   messagesDiv.innerHTML = emptyStateHtml();
   renderSessionList();
